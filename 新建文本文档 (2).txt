@@ -1,0 +1,124 @@
+/*************************************************************************
+  > 文件路径:client.c
+  > 作者: Moliam
+  > 邮箱: 2515826079@qq.com 
+  > 文件创建时间: 2019年03月17日 星期日 17时26分02秒
+ ************************************************************************/
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <pthread.h>
+
+int sockfd;//客户端sockfd
+char *IP = "192.168.1.190";//服务器IP，这个IP可以在服务器终端输入ifconfig查询
+short PORT = 9709;//端口号，
+typedef struct sockaddr AD;//方便阅读和书写的类型定义
+char name[30];//客户端名字
+int flag_chat;//群聊与私聊标志
+int text_fd;//用来承接函数返回值，判断是否出错
+
+void err(const char *str,int line);//出错函数，并退出客户端
+void Init(void);//根据TCP协议初始化客户端
+void start(void);//
+void *recv_pthread(void *p);//接收线程服务函数
+
+int main(void)
+{
+	Init();
+	memset(name,0,sizeof(name));
+	printf("请输入你的昵称:\n");
+	scanf("%s",name);
+	start();
+	return 0;
+}
+void start(void)
+{
+	char buf2[120]={0};
+	int send_fd;
+	pthread_t id;
+	pthread_create(&id,0,recv_pthread,0);//创建线程用来接收消息
+	text_fd = send(sockfd,name,strlen(name),0);
+	if (text_fd == -1)
+		err("send",__LINE__);
+	printf("连接成功!聊天过程中可以按""switch""切换私聊和群聊\n");//与服务器链接成功
+	while(1)
+	{
+		char buf[100] = {0};//群聊状态
+all:	
+		scanf("%s",buf);//输入需要发送的消息
+		text_fd = send(sockfd,buf,strlen(buf),0);
+		if (text_fd == -1)
+			err("send",__LINE__);
+		if(strcmp(buf,"seeyou") == 0)//如果发送的是seeyou则退出服务器
+		{
+			text_fd = send(sockfd,"seeyou",strlen("seeyou"),0);
+			if (text_fd == -1)
+				err("send",__LINE__);
+			break;
+		}
+		if((strcmp(buf,"switch") == 0) && (flag_chat == 0))//如果输入switch且为群聊状态
+		{
+			printf("请输入你想要私聊的昵称:\n");
+			scanf("%s",name);
+			text_fd = send(sockfd,name,strlen(name),0);
+			if (text_fd == -1)
+				err("send",__LINE__);
+			printf("%s\n",buf2);
+			if(strcmp(buf2,"error") == 0)
+			{
+				printf("昵称输入错误，已自动回到群聊\n");
+				memset(buf,0,sizeof(buf));
+				goto all;
+			}
+			else 
+			{
+				printf("切换成功\n");
+				printf("请输入聊天内容：\n");
+				memset(buf,0,sizeof(buf));
+			}
+			flag_chat = 1;//切换成功，私聊标志
+		}
+		if((strcmp(buf,"switch") == 0) && (flag_chat == 1))//如果输入switch且为私聊状态
+		{
+			printf("你已回到群聊状态\n");
+			flag_chat = 0;//群聊标志
+		}	
+	}
+	close(sockfd);//关闭套接字
+}
+void *recv_pthread(void *p)//接收线程
+{
+	while(1)
+	{
+		char buf[100] = {0};
+		if(recv(sockfd,buf,sizeof(buf),0) <=0 )
+			return (void *)0;
+		printf("%s\n",buf);
+	}
+}
+void Init(void)
+{
+	sockfd = socket(PF_INET,SOCK_STREAM,0);
+	if(sockfd == -1)
+		err("socket",__LINE__);
+	struct sockaddr_in addr;
+	addr.sin_family = PF_INET;
+	addr.sin_port = htons(PORT);
+	addr.sin_addr.s_addr = inet_addr(IP);
+	if(connect(sockfd,(AD*)&addr,sizeof(addr)) == -1)
+		err("connect",__LINE__);
+	printf("客户端初始化成功!\n");
+}
+void err(const char *str,int line)
+{
+	fprintf(stderr,"出错行号为%d\n",line);//格式化输出
+	perror(str);
+	exit(-1);
+}
